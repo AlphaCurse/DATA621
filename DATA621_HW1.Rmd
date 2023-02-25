@@ -1,0 +1,128 @@
+---
+title: "DATA621 HW 1"
+author: "Tyler Brown"
+date: "2023-02-14"
+output: pdf_document
+---
+
+Overview
+In this homework assignment, you will explore, analyze and model a data set containing approximately 2200
+records. Each record represents a professional baseball team from the years 1871 to 2006 inclusive. Each record
+has the performance of the team for the given year, with all of the statistics adjusted to match the performance of
+a 162 game season.
+Your objective is to build a multiple linear regression model on the training data to predict the number of wins
+for the team.
+
+```{r, include=FALSE}
+library(tidyverse)
+
+df = read.csv("https://raw.githubusercontent.com/AlphaCurse/DATA621/main/moneyball-training-data.csv")
+```
+
+
+## 1. DATA EXPLORATION
+
+### Describe the size and the variables in the moneyball training data set. Consider that too much detail will cause a manager to lose interest while too little detail will make the manager consider that you aren’t doing your job. 
+
+Looking at the data provided, there are a total of 17 variables with 2276 records relevant to professional baseball teams. The 17 variables are each defined and evaluated based on impact on wins.
+
+```{r, echo=FALSE}
+dict <- matrix(c("Indentification Variable (do not use)","None","Number of wins","","Base Hits by batters (1B,2B,3B,HR)","Positive Impact on Wins","Doubles by batters (2B)", "Positive Impact on Wins","Triples by batters (3B)","Positive Impact on Wins","Homeruns by batters (4B)", "Positive Impact on Wins","Walks by batters","Positive Impact on Wins","Batters hit by pitch (get a free base)", "Positive Impact on Wins","Strikeouts by batters","Negative Impact on Wins","Stolen bases", "Positive Impact on Wins","Caught stealing", "Negative Impact on Wins","Errors", "Negative Impact on Wins","Double Plays", "Positive Impact on Wins","Walks allowed", "Negative Impact on Wins","Hits allowed", "Negative Impact on Wins","Homeruns allowed", "Negative Impact on Wins","Strikeouts by pitchers", "Positive Impact on Wins"), ncol=2, byrow=TRUE)
+colnames(dict) <- c("DEFINITION","THEORETICAL EFFECT")
+rownames(dict) <- c("INDEX","TARGET_WINS","TEAM_BATTING_H","TEAM_BATTING_2B","TEAM_BATTING_3B","TEAM_BATTING_4B","TEAM_BATTING_BB","TEAM_BATTING_HBP","TEAM_BATTING_SO","TEAM_BASERUN_SB","TEAM_BASERUN_CS","TEAM_FIELDING_E","TEAM_FIELDING_DP","TEAM_PITCHING_BB","TEAM_PITCHING_H","TEAM_PITCHING_HR","TEAM_PITCHING_SO")
+
+dict <- as.table(dict)
+dict
+```
+
+We can see the minimum value, 1st and 3rd quantile, median value, average value (mean), and the maximum value for each variable.
+```{r, echo=FALSE}
+summary(df)
+```
+
+The missing values are within the following variables and need to be addressed to make a predictive model:
+```{r, echo=FALSE}
+colSums(is.na(df))
+```
+
+Here are boxplots of the variables in the data set. As we can see, the median, upper quartile, lower quartile, upper whisker, lower whisker, and outliers can be determined based on the plots.
+```{r, echo=FALSE}
+plot_df = pivot_longer(df, c("TARGET_WINS","TEAM_BATTING_H","TEAM_BATTING_2B","TEAM_BATTING_3B","TEAM_BATTING_HR","TEAM_BATTING_BB","TEAM_BATTING_SO"))
+
+ggplot(plot_df, aes(x=value, fill=name)) +
+  geom_boxplot()
+```
+
+Additionally, we can use a barplot to determine the count of each value for each variable. 
+```{r, echo=FALSE}
+ggplot(plot_df, aes(x=value)) +
+  geom_bar() +
+  facet_wrap(name ~ ., scales = "free")
+```
+
+Let's determine the correlation of our target variable with each remaining variable, where values range from -1 (negative linear correlation) and 1 (positive linear correlation).
+```{r, echo=FALSE}
+cor(df[ ,colnames(df) != "TARGET_WINS"],
+    df$TARGET_WINS)
+```
+
+## 2. Data Preparation
+
+### `Describe how you have transformed the data by changing the original variables or creating new variables. If you did transform the data or create new variables, discuss why you did this. Here are some possible transformations.
+
+First, we need to address the missing values. From what we can recall, TEAM_BATTING_HBP have over 90% of missing values and should not be included in the model. Additionally, the INDEX variable has no relevance to the model and therefore will be removed as well. TEAM_BASERUN_CS is highly correlated with TEAM_BASERUN_SB and has a large amount of missing values. I will remove this variable from the model. In baseball, stolen bases can be derived from the batting and/or pitching rates. Therefore TEAM_BASERUN_SB can be removed from the model. The remaining variables (TEAM_BATTING_SO, TEAM_PITCHING_SO, TEAM_FIELDING_E, and TEAM_FIELDING_DP) will have their missing values replaced with the median values. This is, in my opinion, the best course of action because having a decimal value for each variable when they should be whole numbers does not make sense and will show in the model.
+```{r, echo=FALSE}
+prep_df = df
+prep_df=subset(prep_df, select= (-TEAM_BATTING_HBP))
+prep_df=subset(prep_df, select= (-INDEX))
+prep_df=subset(prep_df, select= (-TEAM_BASERUN_CS))
+prep_df=subset(prep_df, select= (-TEAM_BASERUN_SB))
+prep_df$TEAM_BATTING_SO[is.na(prep_df$TEAM_BATTING_SO)]=median(prep_df$TEAM_BATTING_SO, na.rm=TRUE)
+prep_df$TEAM_PITCHING_SO[is.na(prep_df$TEAM_PITCHING_SO)]=median(prep_df$TEAM_PITCHING_SO, na.rm=TRUE)
+prep_df$TEAM_FIELDING_DP[is.na(prep_df$TEAM_FIELDING_DP)]=median(prep_df$TEAM_FIELDING_DP, na.rm=TRUE)
+prep_df$TEAM_FIELDING_E[is.na(prep_df$TEAM_FIELDING_E)]=median(prep_df$TEAM_FIELDING_E, na.rm=TRUE)
+```
+
+## 3. Build Models
+
+### Using the training data set, build at least three different multiple linear regression models, using different variables (or the same variables with different transformations). Since we have not yet covered automated variable selection methods, you should select the variables manually (unless you previously learned Forward or Stepwise selection, etc.). Since you manually selected a variable for inclusion into the model or exclusion into the model, indicate why this was done.
+
+The first multiple linear regression model is based on only batting variables. 
+```{r, echo=FALSE}
+bm1 = lm(TARGET_WINS ~ TEAM_BATTING_H + TEAM_BATTING_2B + TEAM_BATTING_3B + TEAM_BATTING_HR + TEAM_BATTING_BB + TEAM_BATTING_SO, data=prep_df)
+summary(bm1)
+```
+
+Since TEAM_BATTING_2B has a p-value greater than 0.05, I will remove it from the model. This is a better model as all coefficients are positive, which means there is a positive correlation in relation to winning. Unfortunately, I was not expecting Batting Strike Outs being positively correlated to winnings, which does not make much sense.
+```{r, echo=FALSE}
+bm2 = lm(TARGET_WINS ~ TEAM_BATTING_H + TEAM_BATTING_3B + TEAM_BATTING_HR + TEAM_BATTING_BB + TEAM_BATTING_SO, data=prep_df)
+summary(bm2)
+```
+
+The next model is made only off the pitching variables.
+```{r, echo=FALSE}
+pm1 = lm(TARGET_WINS ~ TEAM_PITCHING_H + TEAM_PITCHING_HR + TEAM_PITCHING_BB + TEAM_PITCHING_SO, data=prep_df)
+summary(pm1)
+```
+
+From the model, it seems pitching has little to no correlation to winning the game as the coefficients are close to 0, whether negative or positive.
+
+The final model is based on fielding only.
+```{r, echo=FALSE}
+fm1 = lm(TARGET_WINS ~ TEAM_FIELDING_E + TEAM_FIELDING_DP, data=prep_df)
+summary(fm1)
+```
+The fielding error variable has a negative correlation to winning the game, which makes sense. However, the fielding double play should have had a positive correlation, though it is close to 0. 
+
+## Select Model
+
+### Decide on the criteria for selecting the best multiple linear regression model. Will you select a model with slightly worse performance if it makes more sense or is more parsimonious? Discuss why you selected your model. 
+
+All three models have similar characteristics that would allow them to be implemented. The MSE and residual plots where fairly similar across the models. I have decided, however, to choose the batting multiple regression model because the F Stat and R-squared scores were significantly higher than the others. The F Stat explains the variability more than the other models and the R-squared explains better model fitting. 
+
+## Implement Prediction to Evaluation Data
+```{r, echo=FALSE}
+eval_data = read.csv("https://raw.githubusercontent.com/AlphaCurse/DATA621/main/moneyball-evaluation-data.csv")
+
+predict(bm2, newdata = eval_data, interval='confidence')
+```
